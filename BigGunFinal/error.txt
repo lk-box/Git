@@ -1,0 +1,5 @@
+terminate called after throwing an instance of 'cv::Exception'
+  what():  OpenCV(3.4.3) /home/ubuntu/opencv-3.4.3/modules/imgproc/src/color.cpp:181: error: (-215:Assertion failed) !_src.empty() in function 'cvtColor'
+
+terminate called after throwing an instance of 'cv::Exception'
+terminate called recursively
