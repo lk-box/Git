@@ -1,5 +1,5 @@
 #include "ArrorAttitudeAlgorithm.h"
-
+#include "ArmorRecognition.h"
 //#define FOCALLENGTH
 ArrorAttitudeAlgorithm::ArrorAttitudeAlgorithm()
 {
@@ -18,21 +18,22 @@ ArrorAttitudeAlgorithm::~ArrorAttitudeAlgorithm()
 {
 }
 
-double ArrorAttitudeAlgorithm::angleSover(Mat src, RotatedRect arrorRect, double & yaw, double & pitch)
+double ArrorAttitudeAlgorithm::angleSover(RotatedRect arrorRect, double & yaw, double & pitch)
 {
 #ifdef FOCALLENGTH
 	//printf("LED物理尺寸=%f\n",arrorRect.size.height*inchPerPixHeight);
 	cout << arrorRect.size.height * inchPerPixHeight * actualDist / ledHeight << endl;
 	//printf("实际焦距（实测参数代入）=%f\n",(arrorRect.size.height*inchPerPixHeight)*actualDist/ledHeight);
 #endif
+	
 	double diffX, diffY, distance;
-	diffX = arrorRect.center.x - src.size().width / 2.0;
-	diffY = arrorRect.center.y - src.size().height / 2.0;
+	diffX = arrorRect.center.x - MATWIDTH / 2.0;
+	diffY = arrorRect.center.y - MATHEIGHT / 2.0;
 	yaw = atan(diffX * (inchPerPixWidth / focalLenth)) * 57.2958;//0.0075 4.8/640
 	pitch = atan(diffY * (inchPerPixHeight / focalLenth)) * 57.2958;//0.0075 3.6/480
 	//double degree = abs(tan(yaw * 3.14159265 / 180 * 0.25));
 
-	distance = ((ledHeight * focalLenth) / (arrorRect.size.height * inchPerPixHeight / 10.0));// );
+	distance = ((ledHeight * focalLenth) / (arrorRect.size.height * inchPerPixHeight * 10.0));// );
 	//cout << "dis:" << distance << endl;
 	return distance;
 }

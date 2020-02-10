@@ -10,7 +10,7 @@ public:
 	~ArrorAttitudeAlgorithm();//X:Yaw,Y:Pitch
 	int actualDist;
 	double focalLenth;
-	double angleSover(Mat src, RotatedRect arrorRect, double& yaw, double& pitch);
+	double angleSover(RotatedRect arrorRect, double& yaw, double& pitch);
 private:
 	double inchPerPixWidth;
 	double inchPerPixHeight;

@@ -7,11 +7,9 @@
 #include "opencv2/videoio.hpp"
 #include <cmath>
 #include <opencv2/ml/ml.hpp> 
-#include "Result.h"
 #include <fstream>
 #include <stdio.h>
 #include "ArrorAttitudeAlgorithm.h"
-#include "Result.h"
 
 using namespace cv;
 using namespace std;
@@ -30,25 +28,33 @@ typedef struct
 class ArmorRecognition
 {
 public:
+	int ch;
 	int color_th, gray_th;
 	int min_area, max_area;
-	int ch;
+	int min_length, max_length;
+	int min_armor_angle, max_armor_angle;
+	int min_led_Ratio, max_led_Ratio;
+	int min_armor_Ratio, max_armor_Ratio;
 	int diff_angle;
 
-	ArmorRecognition();
+	double yaw;
+	double pitch;
+	float distance;
+
+	float height;
+	float width;
+	float x;
+	float y;
+
+	int Isfind;
+	
 	bool suitble(RotatedRect &r1, RotatedRect &r2);
-	void b_track_armor(Mat srcimage, Mat frame, Result &r, FileStorage fs, Ptr<SVM> svm);
+	void track_armor(Mat frame, Ptr<SVM> svm, Rect RoiRect);
 	void draw_light(RotatedRect box, Mat img);
-	void drawBox(RotatedRect box, Mat img);
+	void drawBox(RotatedRect &box, Mat img, Rect RoiRect);
 	int get_num(RotatedRect box, Ptr<SVM> svm, Mat frame);
 	vector<my_rect> armorDetect(vector<RotatedRect> vEllipse, Mat frame, Ptr<SVM> svm);
 
 private:
-	Mat dstimg;
-	int tsize1;
-	int tangle, bright;
-	int k;
-	int thresh, thresh1;
-	
-	
+ofstream outfile;
 };

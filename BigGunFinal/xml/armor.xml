@@ -1,10 +1,18 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="utf-8"?>
 <opencv_storage>
 <rgray_th>100</rgray_th>
 <bgray_th>95</bgray_th>
-<color_th>30</color_th>
+<color_th>35</color_th>
 <ch>0</ch>
 <diff_angle>5</diff_angle>
-<min_area>10</min_area>
+<min_area>1</min_area>
 <max_area>2000</max_area>
+<min_length>1</min_length>
+<max_length>400</max_length>
+<min_armor_angle>-45</min_armor_angle>
+<max_armor_angle>45</max_armor_angle>
+<min_led_Ratio>1</min_led_Ratio>
+<max_led_Ratio>20</max_led_Ratio>
+<min_armor_Ratio>1</min_armor_Ratio>
+<max_armor_Ratio>7</max_armor_Ratio>
 </opencv_storage>

@@ -1,28 +1,30 @@
 #include "ArmorRecognition.h"
 
-//#define SvmPredict
+
 #define frameimg
-//#define gray_th_img
-//#define color_th_img
-//#define rltimg
-#define NumRoiimg
+//#define gray_th_img   //ç°åº¦äºŒå€¼å›¾
+//#define color_th_img  //é€šé“ç›¸å‡äºŒå€¼å›¾
+//#define rltimg        //èåˆå›¾åƒ
+
+//#define NumRoiimg   //æ•°å­—äºŒå€¼å›¾
+//#define SvmPredict  //å¼€å¯svmåˆ¤å®šè£…ç”²æ¿
+
+#define getBox//ç‹‚å‡ºç›®æ ‡è£…ç”²æ¿
+#define getLight//æ¡†å‡ºç¯æ¡
+
+
+//å¼€å¤šçº¿ç¨‹æ—¶å›¾åƒæ˜¾ç¤ºé”
+pthread_mutex_t image_mutex;
 
 
 
-static pthread_mutex_t image = PTHREAD_MUTEX_INITIALIZER;
 enum
 {
 	WIDTH_GREATER_THAN_HEIGHT,
 	ANGLE_TO_UP
 };
 
-
-
-ArmorRecognition::ArmorRecognition()
-{
-	k = 0;
-}
-
+//è°ƒæ•´çŸ©å½¢è§’åº¦å‡½æ•°
 cv::RotatedRect& adjustRec(cv::RotatedRect& rec, const int mode)
 {
 	using std::swap;
@@ -59,6 +61,8 @@ cv::RotatedRect& adjustRec(cv::RotatedRect& rec, const int mode)
 	return rec;
 }
 
+
+//è£…ç”²æ¿åˆ¤å®šæ¡ä»¶
 bool ArmorRecognition::suitble(RotatedRect &r1, RotatedRect &r2)
 {
 	double dAngle = abs(r1.angle - r2.angle);
@@ -77,7 +81,6 @@ bool ArmorRecognition::suitble(RotatedRect &r1, RotatedRect &r2)
 			if (armor_width > (r1.size.width + r2.size.width) )
 			{
 				float h_max = (r1.size.height + r2.size.height) / 2.0f;
-				// Á½¸öµÆÌõ¸ß¶È²î²»´ó
 				if (fabs(r1.center.y - r2.center.y) <  h_max)
 				{
 					return true;
@@ -88,10 +91,11 @@ bool ArmorRecognition::suitble(RotatedRect &r1, RotatedRect &r2)
 	return false;
 }
 
+
+//svmé¢„æµ‹å‡½æ•°
 int svmPredict( Mat & image, Ptr<SVM> svm)
 {
-	//Ptr<ml::SVM> svm = Algorithm::load<ml::SVM>(_Filename);
-	//¼ì²âÑù±¾    
+
 	Mat dstImage = image.clone();
 
 	Mat src = image.clone();
@@ -104,9 +108,9 @@ int svmPredict( Mat & image, Ptr<SVM> svm)
 	resize(src, trainTempImg, trainTempImg.size(), 0, 0);
 
 	HOGDescriptor *hog = new HOGDescriptor(Size(48, 48), Size(8, 8), Size(4, 4), Size(4, 4), 9);
-	vector<float>descriptors;//´æ·Å½á¹û       
-	hog->compute(trainTempImg, descriptors); //HogÌØÕ÷¼ÆËã  , Size(1, 1), Size(0, 0)    
-	//cout << "HOG dims: " << descriptors.size() << endl;  //´òÓ¡HogÌØÕ÷Î¬Êı  £¬ÕâÀïÊÇ4356
+	vector<float>descriptors;     
+	hog->compute(trainTempImg, descriptors);  
+	//cout << "HOG dims: " << descriptors.size() << endl;  //4356
 	Mat SVMtrainMat;
 	SVMtrainMat.create(1, descriptors.size(), CV_32FC1);
 
@@ -117,11 +121,13 @@ int svmPredict( Mat & image, Ptr<SVM> svm)
 		n++;
 	}
 
-	int ret = svm->predict(SVMtrainMat);//¼ì²â½á¹û
+	int ret = svm->predict(SVMtrainMat);
 
 	return ret;
 }
 
+
+//ç»˜åˆ¶ç¯æ¡å‡½æ•°
 void ArmorRecognition::draw_light(RotatedRect box, Mat img)
 {
 	Point2f pt[4];
@@ -133,123 +139,52 @@ void ArmorRecognition::draw_light(RotatedRect box, Mat img)
 	}
 	box.points(pt);
 
-	line(img, pt[0], pt[1], CV_RGB(0, 255, 255), 1, 8, 0);
-	line(img, pt[1], pt[2], CV_RGB(0, 255, 255), 1, 8, 0);
-	line(img, pt[2], pt[3], CV_RGB(0, 255, 255), 1, 8, 0);
-	line(img, pt[3], pt[0], CV_RGB(0, 255, 255), 1, 8, 0);
+	line(img, pt[0], pt[1], CV_RGB(0, 225, 255), 2, 8, 0);
+	line(img, pt[1], pt[2], CV_RGB(0, 225, 255), 2, 8, 0);
+	line(img, pt[2], pt[3], CV_RGB(0, 225, 255), 2, 8, 0);
+	line(img, pt[3], pt[0], CV_RGB(0, 225, 255), 2, 8, 0);
 }
 
-void  ArmorRecognition::drawBox(RotatedRect box, Mat img)
+
+//ç»˜åˆ¶è£…ç”²æ¿ï¼Œå¹¶å°†è£…ç”²æ¿åæ ‡æ¢å¤ä¸ºåŸå›¾åæ ‡
+void  ArmorRecognition::drawBox(RotatedRect &box, Mat img, Rect RoiRect)
 {
 	Point2f pt[4];
 	int i;
-	for (i = 0; i < 4; i++)
-	{
-		pt[i].x = 0;
-		pt[i].y = 0;
-	}
 	box.points(pt);
+	
+#ifdef getBox	
 	line(img, pt[0], pt[1], CV_RGB(0, 255, 255), 3, 8, 0);
 	line(img, pt[1], pt[2], CV_RGB(0, 255, 255), 3, 8, 0);
 	line(img, pt[2], pt[3], CV_RGB(0, 255, 255), 3, 8, 0);
 	line(img, pt[3], pt[0], CV_RGB(0, 255, 255), 3, 8, 0);
+#endif
 
+	for (i = 0; i < 4; i++)
+	{
+		pt[i].x += RoiRect.x;
+		pt[i].y += RoiRect.y;
+	}
+	/* box.center.x += RoiRect.x;
+	box.center.y += RoiRect.y;
+	if (box.center.x < 0 || box.center.x > MATWIDTH)
+	{
+		box.center.x = 0;
+	}
+	if (box.center.y < 0 || box.center.y > MATHEIGHT)
+	{
+		box.center.y = 0;
+	} */
+	x = pt[1].x - (box.size.width * 0.5);
+	y = pt[1].y - (box.size.height * 0.5);
+	width = box.size.width * 2;
+	height = box.size.height * 2;
 
 }
 
-int daJinThreshold(Mat grayImg)
-{
-	if (grayImg.channels() != 1)
-		cvtColor(grayImg, grayImg, COLOR_BGR2GRAY);
 
-	int width = grayImg.cols;
-	int height = grayImg.rows;
-	int x = 0, y = 0;
-	int pixelCount[256];
-	float pixelPro[256];
-	int pixelSum = width * height, threshold = 0;
-
-
-	//³õÊ¼»¯  
-	for (uint nI = 0; nI < 256; nI++)
-	{
-		pixelCount[nI] = 0;
-		pixelPro[nI] = 0;
-	}
-
-	//Í³¼Æ»Ò¶È¼¶ÖĞÃ¿¸öÏñËØÔÚÕû·ùÍ¼ÏñÖĞµÄ¸öÊı  
-	for (uint nI = y; nI < height; nI++)
-	{
-		uchar* pixData = grayImg.ptr<uchar>(nI);
-		for (uint nJ = x; nJ < width; nJ++)
-		{
-			pixelCount[pixData[nJ]] = pixData[nJ];
-		}
-	}
-
-
-	//¼ÆËãÃ¿¸öÏñËØÔÚÕû·ùÍ¼ÏñÖĞµÄ±ÈÀı  
-	for (uint nI = 0; nI < 256; nI++)
-	{
-		pixelPro[nI] = (float)(pixelCount[nI]) / (float)(pixelSum);
-	}
-
-	//¾­µäostuËã·¨,µÃµ½Ç°¾°ºÍ±³¾°µÄ·Ö¸î  
-	//±éÀú»Ò¶È¼¶[0,255],¼ÆËã³ö·½²î×î´óµÄ»Ò¶ÈÖµ,Îª×î¼ÑãĞÖµ  
-	float w0, w1, u0tmp, u1tmp, u0, u1, u, deltaTmp, deltaMax = 0;
-	for (uint nI = 0; nI < 256; nI++)//iÎªãĞÖµ
-	{
-		w0 = w1 = u0tmp = u1tmp = u0 = u1 = u = deltaTmp = 0;
-
-		for (uint nJ = 0; nJ < 256; nJ++)//±éÀúãĞÖµÊı×éµ±i=0£¬1£¬2£¬3...255
-		{
-			if (nJ <= nI) //±³¾°²¿·Ö  
-			{
-				//ÒÔiÎªãĞÖµ·ÖÀà£¬µÚÒ»Àà×ÜµÄ¸ÅÂÊ  
-				w0 += pixelPro[nJ];
-				u0tmp += nJ * pixelPro[nJ];
-			}
-			else       //Ç°¾°²¿·Ö  
-			{
-				//ÒÔiÎªãĞÖµ·ÖÀà£¬µÚ¶şÀà×ÜµÄ¸ÅÂÊ  
-				w1 += pixelPro[nJ];
-				u1tmp += nJ * pixelPro[nJ];
-			}
-		}
-
-		u0 = u0tmp / w0;        //µÚÒ»ÀàµÄÆ½¾ù»Ò¶È  
-		u1 = u1tmp / w1;        //µÚ¶şÀàµÄÆ½¾ù»Ò¶È  
-		u = u0tmp + u1tmp;      //Õû·ùÍ¼ÏñµÄÆ½¾ù»Ò¶È  
-		//¼ÆËãÀà¼ä·½²î  
-		deltaTmp = w0 * (u0 - u)*(u0 - u) + w1 * (u1 - u)*(u1 - u);
-		//ÕÒ³ö×î´óÀà¼ä·½²îÒÔ¼°¶ÔÓ¦µÄãĞÖµ  
-		if (deltaTmp > deltaMax)
-		{
-			deltaMax = deltaTmp;
-			threshold = nI;
-		}
-	}
-	return threshold;
-}
-
-void getArrorNumBinary(Mat &src)
-{
-	//@@@Ö±·½Í¼¾ùºâ»¯
-	equalizeHist(src, src);
-	int thre = daJinThreshold(src);
-#ifdef MLStep20
-	printf("thre=%d\n", thre);
-	imshow("equalizeHist", src);
-#endif // MLStep20
-	//@@@´ó½ò¶şÖµ»¯
-	medianBlur(src, src, 5);
-	//cout << "thre:" << thre << endl;
-	threshold(src, src, thre, 255, THRESH_BINARY);
-	//adaptiveThreshold(src, src, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 11, 2);
-	//@@@È¥³ı½·ÑÎÔëµã
-}
-
-int GetMeanThreshold(Mat grayImg)//»Ò¶ÈÆ½¾ÖÖµÖµ·¨
+//ç°åº¦å¹³å‡é˜ˆå€¼å‡½æ•°
+int GetMeanThreshold(Mat grayImg)
 {
 	int width = grayImg.cols;
 	int height = grayImg.rows;
@@ -257,15 +192,13 @@ int GetMeanThreshold(Mat grayImg)//»Ò¶ÈÆ½¾ÖÖµÖµ·¨
 	int pixelCount[256];
 	float pixelPro[256];
 	int pixelSum = width * height;
-
-	//³õÊ¼»¯  
+  
 	for (uint nI = 0; nI < 256; nI++)
 	{
 		pixelCount[nI] = 0;
 		pixelPro[nI] = 0;
 	}
-
-	//Í³¼Æ»Ò¶È¼¶ÖĞÃ¿¸öÏñËØÔÚÕû·ùÍ¼ÏñÖĞµÄ¸öÊı  
+ 
 	for (uint nI = y; nI < height; nI++)
 	{
 		uchar* pixData = grayImg.ptr<uchar>(nI);
@@ -284,7 +217,7 @@ int GetMeanThreshold(Mat grayImg)//»Ò¶ÈÆ½¾ÖÖµÖµ·¨
 }
 
 
-
+//è·å–è£…ç”²æ¿æ•°å­—å‡½æ•°
 int ArmorRecognition::get_num(RotatedRect box, Ptr<SVM> svm, Mat frame)
 {
 	Point2f pt[4];
@@ -322,13 +255,14 @@ int ArmorRecognition::get_num(RotatedRect box, Ptr<SVM> svm, Mat frame)
 
 	//cout << "x:" << x << "y:" << y << "width:" << wh << "hight:" << ht << endl;	
 	Mat imageROI;
-	//cout << 11 << endl;
+	outfile << "å¼€å§‹æ„å»ºè£…ç”²æ¿æ•°å­—roi..." << endl;
 	imageROI = frame(Rect(x, y, wh, ht));
+	outfile << "æ„å»ºè£…ç”²æ¿æ•°å­—roiæˆåŠŸ..." << endl;
 	//cout << 22 << endl;
-	//k++;
 
-	resize(imageROI, imageROI, cv::Size(48, 48), (0, 0), (0, 0), cv::INTER_LINEAR);  //½«Í¼Æ¬µ÷ÕûÎªÏàÍ¬µÄ´óĞ¡
-	//getArrorNumBinary(imageROI);
+
+	resize(imageROI, imageROI, cv::Size(48, 48), (0, 0), (0, 0), cv::INTER_LINEAR);  
+
 	cvtColor(imageROI, imageROI, COLOR_BGR2GRAY);
 	equalizeHist(imageROI, imageROI);
 	int tth = GetMeanThreshold(imageROI);
@@ -347,6 +281,8 @@ int ArmorRecognition::get_num(RotatedRect box, Ptr<SVM> svm, Mat frame)
 	return a;
 
 }
+
+
 
 vector<my_rect> ArmorRecognition::armorDetect(vector<RotatedRect> vEllipse, Mat frame, Ptr<SVM> svm)
 {
@@ -369,7 +305,7 @@ vector<my_rect> ArmorRecognition::armorDetect(vector<RotatedRect> vEllipse, Mat 
 				armor.rect.center.y = (vEllipse[i].center.y + vEllipse[j].center.y) / 2;
 				armor.rect.angle = (vEllipse[i].angle + vEllipse[j].angle) / 2;
 				nL = (vEllipse[i].size.height + vEllipse[j].size.height) / 2;
-				nW = sqrt((vEllipse[i].center.x - vEllipse[j].center.x) * (vEllipse[i].center.x - vEllipse[j].center.x) + (vEllipse[i].center.y - vEllipse[j].center.y) * (vEllipse[i].center.y - vEllipse[j].center.y)); //×°¼×µÄ¿í¶ÈµÈÓÚÁ½²àLEDËùÔÚĞı×ª¾ØĞÎÖĞĞÄ×ø±êµÄ¾àÀë
+				nW = sqrt((vEllipse[i].center.x - vEllipse[j].center.x) * (vEllipse[i].center.x - vEllipse[j].center.x) + (vEllipse[i].center.y - vEllipse[j].center.y) * (vEllipse[i].center.y - vEllipse[j].center.y)); //×°ï¿½×µÄ¿ï¿½ï¿½Èµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½LEDï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¾ï¿½ï¿½ï¿½
 
 				if (nL < nW)
 				{
@@ -381,24 +317,28 @@ vector<my_rect> ArmorRecognition::armorDetect(vector<RotatedRect> vEllipse, Mat 
 					armor.rect.size.height = nW;
 					armor.rect.size.width = nL;
 				}
+				adjustRec(armor.rect, WIDTH_GREATER_THAN_HEIGHT);
 
-				if (armor.rect.angle < 90)
+				//cout << "angle :"<< armor.rect.angle << endl;
+				//cout << "Ratio:" << armor.rect.size.width / armor.rect.size.height << endl;
+				if (armor.rect.size.width / armor.rect.size.height > min_armor_Ratio 
+				&& armor.rect.size.width / armor.rect.size.height < max_armor_Ratio
+				&& armor.rect.angle > min_armor_angle
+				&& armor.rect.angle < max_armor_angle 
+				)
 				{
-					armor.rect.angle += 180;
-				}
-
-				if (armor.rect.size.height * 6 > armor.rect.size.width && armor.rect.size.height < armor.rect.size.width )//&& suitble(vEllipse[i], vEllipse[j])
-				{
-
 #ifdef SvmPredict
 					int finalnum;
+					outfile << "å¼€å§‹é¢„æµ‹è£…ç”²æ¿æ•°å­—..." << endl;
 					finalnum = get_num(armor.rect, svm, frame);
+					outfile << "é¢„æµ‹è£…ç”²æ¿æ•°å­—ç»“æŸ..." << endl;
 					if (finalnum)
 					{
 						armor.num = finalnum;
 						vRlt.push_back(armor);
 					}
 #else
+					outfile << "æ‰¾åˆ°å€™é€‰è£…ç”²æ¿..." << endl;
 					vRlt.push_back(armor);
 #endif
 				}
@@ -409,182 +349,182 @@ vector<my_rect> ArmorRecognition::armorDetect(vector<RotatedRect> vEllipse, Mat 
 }
 
 
-void ArmorRecognition::b_track_armor(Mat srcimage, Mat frame, Result &r, FileStorage fs, Ptr<SVM> svm)
+//ä¸»å¤„ç†å›¾åƒå‡½æ•°
+void ArmorRecognition::track_armor(Mat frame, Ptr<SVM> svm, Rect RoiRect)
 {
-	ofstream outfile;//´´½¨ÎÄ¼ş
+	
 	outfile.open("log.txt");
+	outfile << "å¼€å§‹å¤„ç†..." << endl;
+	Mat mask;
+	Size imgSize;
+	imgSize = frame.size();
 
-	if (srcimage.data)
+	Mat rimg = Mat(imgSize, CV_8UC1);
+	Mat bimg = Mat(imgSize, CV_8UC1);
+
+	Mat diff = Mat(imgSize, CV_8UC1);
+	Mat th = Mat(imgSize, CV_8UC1);
+	Mat th1 = Mat(imgSize, CV_8UC1);
+	Mat rlt = Mat(imgSize, CV_8UC1);
+
+	vector<vector<Point>> contour;
+	RotatedRect light;
+
+
+	vector<my_rect> vRlt;
+	vector<RotatedRect> vEllipse;
+	my_rect finalarmor;
+
+	Mat gray = Mat(imgSize, CV_8UC1);
+	cvtColor(frame, gray, COLOR_BGR2GRAY);//225
+
+	Mat channels[3];
+	split(frame, channels);
+
+	bimg = channels[0];
+	rimg = channels[2];
+
+	if (ch == 0)
 	{
-		outfile << "¿ªÊ¼´¦Àí..." << endl;
-		Mat mask;
-		Size imgSize;
-		imgSize = frame.size();
-
-		Mat rimg = Mat(imgSize, CV_8UC1);
-		Mat gimg = Mat(imgSize, CV_8UC1);
-		Mat bimg = Mat(imgSize, CV_8UC1);
-
-		Mat diff = Mat(imgSize, CV_8UC1);
-		Mat th = Mat(imgSize, CV_8UC1);
-		Mat th1 = Mat(imgSize, CV_8UC1);
-		Mat rlt = Mat(imgSize, CV_8UC1);
-
-		vector<vector<Point>> contour;
-		RotatedRect s;
+		diff = bimg - rimg;
+	}
+	else if (ch == 1)
+	{
+		diff = rimg - bimg;
+	}
 
 
-		vector<RotatedRect> vArmor;
-		vector<my_rect> vRlt;
-		vector<RotatedRect> vRlt_svm;
-		vector<RotatedRect> vEllipse;
-		my_rect finalarmor;
+	dilate(diff, diff, Mat(), Point(-1, -1), 4);
 
-		Mat gray = Mat(imgSize, CV_8UC1);
-		cvtColor(frame, gray, COLOR_BGR2GRAY);//225
-		outfile << "»ñÈ¡gray³É¹¦..." << endl;
-
-		Mat channels[3];
-		split(frame, channels);
-
-		bimg = channels[0];
-		gimg = channels[1];
-		rimg = channels[2];
-
-		if (ch == 0)
-		{
-			diff = bimg - rimg;
-		}
-		else if (ch == 1)
-		{
-			diff = rimg - bimg;
-		}
-		outfile << "»ñÈ¡diff³É¹¦..." << endl;
-
-
-		dilate(diff, diff, Mat(), Point(-1, -1), 3);
-		threshold(diff, th1, color_th, 255, THRESH_BINARY);
-		outfile << "»ñÈ¡color_th³É¹¦..." << endl;
-		threshold(gray, th, gray_th, 255, THRESH_BINARY);
-		outfile << "»ñÈ¡gray_th³É¹¦..." << endl;
-
+	threshold(diff, th1, color_th, 255, THRESH_BINARY);
+	threshold(gray, th, gray_th, 255, THRESH_BINARY);
+	
 #ifdef gray_th_img
-		imshow("gray_th", th);
+	imshow("gray_th", th);
 #endif
 
 #ifdef color_th_img
-		imshow("color_th", th1);
+	imshow("color_th", th1);
 #endif
 
-		bitwise_and(th, th1, rlt);
-		outfile << "»ñÈ¡rlt³É¹¦..." << endl;
-
+	bitwise_and(th, th1, rlt);
+	outfile << "å¾—åˆ°æ··åˆå›¾åƒ..." << endl;
 #ifdef rltimg
-		imshow("rlt", rlt);
+	imshow("rlt", rlt);
 #endif
 
+	outfile << "å¯»æ‰¾ç¯æ¡å¼€å§‹..." << endl;
+	findContours(rlt, contour, RETR_EXTERNAL, CHAIN_APPROX_NONE);
 
-		findContours(rlt, contour, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-		outfile << "ÕÒµÆÌõ¿ªÊ¼..." << endl;
-		for (int k = 0; k < contour.size(); k++)
+	for (int k = 0; k < contour.size(); k++)
+	{
+		double area = contourArea(contour[k]);
+		double length = arcLength(contour[k], true); 
+		if (area < min_area || area > max_area || length < min_length || length > max_length)
 		{
-			double area = contourArea(contour[k]);
-			if (area < min_area || area > max_area)//
+			continue;
+		}
+		if (contour[k].size() > 6)
+		{
+			light = fitEllipse(contour[k]);
+			adjustRec(light, ANGLE_TO_UP);
+			if (light.angle > 50 || light.angle < -50)
 			{
 				continue;
 			}
-			double length = arcLength(contour[k], true); // µÆÌõÖÜ³¤
-			if (length > 3 && length < 2000)
+			if ( light.size.height / light.size.width > min_led_Ratio && light.size.height / light.size.width < max_led_Ratio)
 			{
-				if (contour[k].size() > 6)
-				{
-					bool Flag = true;
-					s = fitEllipse(contour[k]);
-					adjustRec(s, ANGLE_TO_UP);
-					if (s.size.height > s.size.width)//isValidLightBlob(contour[k], s)
-					{
-						draw_light(s, frame);
-						vEllipse.push_back(s);
-					}
-				}
+				outfile << "å¾—åˆ°ç¯æ¡..." << endl;
+#ifdef getLight
+				draw_light(light, frame);
+#endif
+				vEllipse.push_back(light);
 			}
-		}
-		outfile << "ÕÒµÆÌõ½áÊø..." << endl;
-
-
-		outfile << "ÕÒ×°¼×°å¿ªÊ¼..." << endl;
-		vRlt = armorDetect(vEllipse, frame, svm);
-		outfile << "ÕÒ×°¼×°å½áÊø..." << endl;
-
-		if (vRlt.size() != 0)
-		{
-			finalarmor = vRlt[0];
-			if (vRlt.size() > 1)
-			{
-				for (int i = 1; i < vRlt.size(); i++)
-				{
-					if (finalarmor.rect.size.area() < vRlt[i].rect.size.area())
-					{
-						finalarmor = vRlt[i];
-					}
-				}
-			}
-
-			drawBox(finalarmor.rect, frame);
-#ifdef SvmPredict
-			putText(frame, to_string(finalarmor.num), Point(finalarmor.rect.center.x - 5, finalarmor.rect.center.y + 5), 5, 1.2, Scalar(0, 255, 255), 2);
-#endif			
-			//cout << finalnum << endl;
-
-			ArrorAttitudeAlgorithm angle;
-			double yaw = 0, pitch = 0;
-			outfile << "¼ÆËãÊı¾İ¿ªÊ¼..." << endl;
-			r.d_distance = angle.angleSover(srcimage, finalarmor.rect, yaw, pitch);
-			r.d_pitch = pitch;
-			r.d_yaw = yaw;
-			outfile << "¼ÆËãÊı¾İ½áÊø..." << endl;
-			
-			r.r_x = finalarmor.rect.center.x - finalarmor.rect.size.width;
-			r.r_y = finalarmor.rect.center.y - finalarmor.rect.size.height;
-			r.r_width = finalarmor.rect.size.width * 2;
-			r.r_height = finalarmor.rect.size.height * 2;
-
-			if (r.r_x < 0)
-			{
-				r.r_x = 0;
-			}
-			if (r.r_y < 0)
-			{
-				r.r_y = 0;
-			}
-			if (r.r_x + r.r_width > MATWIDTH)
-			{
-				r.r_width = MATWIDTH - r.r_x;
-			}
-			if (r.r_y + r.r_height > MATHEIGHT)
-			{
-				r.r_height = MATHEIGHT - r.r_y;
-			}
-			r.r_flag == 1;
-		}
-		else
-		{
-			r.r_flag == 0;
 		}
 		
-/* #ifdef frameimg
-			//pthread_mutex_lock(&image);
-			imshow("frame", frame);
-			waitKey(1);
-			//pthread_mutex_unlock(&image);
-#endif */			
-
-		vEllipse.clear();
-		vRlt.clear();
-		vArmor.clear();
 	}
-	
-	outfile << "´¦Àí½áÊø..." << endl;
+
+	contour.clear();
+	outfile << "å¯»æ‰¾è£…ç”²æ¿å¼€å§‹..." << endl;
+	vRlt = armorDetect(vEllipse, frame, svm);
+
+	//cout << "count :" << vRlt.size() << endl;
+	if (vRlt.size() != 0)
+	{
+		finalarmor = vRlt[0];
+		if (vRlt.size() > 1)
+		{
+			for (int i = 1; i < vRlt.size(); i++)
+			{
+				if (finalarmor.rect.size.area() < vRlt[i].rect.size.area())
+				{
+					finalarmor = vRlt[i];
+				}
+			}
+		}
+		outfile << "å¾—åˆ°æœ€ç»ˆè£…ç”²æ¿..." << endl;
+		drawBox(finalarmor.rect, frame, RoiRect);
+
+#ifdef SvmPredict
+		putText(frame, to_string(finalarmor.num), Point(finalarmor.rect.center.x - 5, finalarmor.rect.center.y + 5), 5, 1.2, Scalar(0, 255, 255), 2);
+#endif			
+		//cout << finalnum << endl;
+
+
+		ArrorAttitudeAlgorithm Get_data;
+		double temp_yaw = 0, temp_pitch = 0;
+
+		outfile << "è·å–æ•°æ®..." << endl;
+		distance = Get_data.angleSover(finalarmor.rect, temp_yaw, temp_pitch);
+		pitch = temp_pitch;
+		yaw = temp_yaw;
+
+
+		if (x < 0 || x > MATWIDTH)
+		{
+			x = 0;
+		}
+		if (y < 0 || y > MATHEIGHT)
+		{
+			y = 0;
+		}
+		if (width < 0)
+		{
+			width = 0;
+		}
+		if (height < 0)
+		{
+			height = 0;
+		}
+		if (x + width > MATWIDTH)
+		{
+			width = MATWIDTH - x;
+		}
+		if (y + height > MATHEIGHT)
+		{
+			height = MATHEIGHT - y;
+		}
+		
+
+		Isfind = 1;
+
+	}
+	else 
+	{
+		outfile << "æœªæ‰¾åˆ°æœ€ç»ˆè£…ç”²æ¿..." << endl;
+		Isfind = 0;
+	}
+
+#ifdef frameimg
+	pthread_mutex_lock(&image_mutex);
+	imshow("frame", frame);
+	waitKey(1);
+	pthread_mutex_unlock(&image_mutex);
+#endif 			
+
+	vEllipse.clear();
+	vRlt.clear();
+	outfile << "å¤„ç†ç»“æŸ..." << endl;
 	outfile.close();
 }
 

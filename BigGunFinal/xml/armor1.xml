@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<opencv_storage>
+<rgray_th>100</rgray_th>
+<bgray_th>95</bgray_th>
+<color_th>30</color_th>
+<ch>0</ch>
+<diff_angle>5</diff_angle>
+<min_area>10</min_area>
+<max_area>2000</max_area>
+</opencv_storage>
