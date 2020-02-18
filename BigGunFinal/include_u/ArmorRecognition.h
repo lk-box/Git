@@ -14,8 +14,33 @@
 using namespace cv;
 using namespace std;
 using namespace cv::ml;
-#define MATWIDTH 800
-#define MATHEIGHT 600
+
+#define MATWIDTH 728
+#define MATHEIGHT 544
+
+//调试
+#define Debug
+
+#ifdef Debug
+
+#define AimTrackbar
+
+#define frameimg
+// #define gray_th_img   //灰度二值图
+// #define color_th_img  //通道相减二值图
+// #define rltimg        //融合图像
+
+// #define NumRoiimg   //数字二值图
+// #define SvmPredict  //开启svm判定装甲板
+
+// #define getBox//框出目标装甲板
+// #define getLight//框出灯条
+
+#endif
+
+
+
+
 
 typedef struct
 {
@@ -28,26 +53,8 @@ typedef struct
 class ArmorRecognition
 {
 public:
-	int ch;
-	int color_th, gray_th;
-	int min_area, max_area;
-	int min_length, max_length;
-	int min_armor_angle, max_armor_angle;
-	int min_led_Ratio, max_led_Ratio;
-	int min_armor_Ratio, max_armor_Ratio;
-	int diff_angle;
 
-	double yaw;
-	double pitch;
-	float distance;
-
-	float height;
-	float width;
-	float x;
-	float y;
-
-	int Isfind;
-	
+	ArmorRecognition(FileStorage fsRead);
 	bool suitble(RotatedRect &r1, RotatedRect &r2);
 	void track_armor(Mat frame, Ptr<SVM> svm, Rect RoiRect);
 	void draw_light(RotatedRect box, Mat img);
@@ -55,6 +62,24 @@ public:
 	int get_num(RotatedRect box, Ptr<SVM> svm, Mat frame);
 	vector<my_rect> armorDetect(vector<RotatedRect> vEllipse, Mat frame, Ptr<SVM> svm);
 
+	int ch;
+	int color_th, gray_th;
+
+	double yaw;
+	double pitch;
+	float distance;
+
+	float height, width, x, y;
+
+	int Isfind;
+
 private:
-ofstream outfile;
+
+	ofstream outfile;
+	int min_area, max_area;
+	int min_length, max_length;
+	int min_armor_angle, max_armor_angle;
+	int min_led_Ratio, max_led_Ratio;
+	int min_armor_Ratio, max_armor_Ratio;
+	int diff_angle;
 };

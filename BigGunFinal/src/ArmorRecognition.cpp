@@ -1,22 +1,32 @@
 #include "ArmorRecognition.h"
 
 
-#define frameimg
-//#define gray_th_img   //灰度二值图
-//#define color_th_img  //通道相减二值图
-//#define rltimg        //融合图像
-
-//#define NumRoiimg   //数字二值图
-//#define SvmPredict  //开启svm判定装甲板
-
-#define getBox//狂出目标装甲板
-#define getLight//框出灯条
-
-
 //开多线程时图像显示锁
 pthread_mutex_t image_mutex;
 
+ArmorRecognition::ArmorRecognition(FileStorage fsRead)
+{
+	ch = 1;
+	fsRead["bgray_th"] >> gray_th;
+	fsRead["color_th"] >> color_th;
 
+	fsRead["diff_angle"] >> diff_angle;
+
+	fsRead["min_area"] >> min_area;
+	fsRead["max_area"] >> max_area;
+
+    fsRead["min_length"] >> min_length;
+	fsRead["max_length"] >> max_length;
+
+    fsRead["min_armor_angle"] >> min_armor_angle;
+	fsRead["max_armor_angle"] >> max_armor_angle;
+
+    fsRead["min_led_Ratio"] >> min_led_Ratio;
+	fsRead["max_led_Ratio"] >> max_led_Ratio;
+
+    fsRead["min_armor_Ratio"] >> min_armor_Ratio;
+	fsRead["max_armor_Ratio"] >> max_armor_Ratio;
+}
 
 enum
 {
@@ -165,7 +175,7 @@ void  ArmorRecognition::drawBox(RotatedRect &box, Mat img, Rect RoiRect)
 		pt[i].x += RoiRect.x;
 		pt[i].y += RoiRect.y;
 	}
-	/* box.center.x += RoiRect.x;
+	box.center.x += RoiRect.x;
 	box.center.y += RoiRect.y;
 	if (box.center.x < 0 || box.center.x > MATWIDTH)
 	{
@@ -174,7 +184,7 @@ void  ArmorRecognition::drawBox(RotatedRect &box, Mat img, Rect RoiRect)
 	if (box.center.y < 0 || box.center.y > MATHEIGHT)
 	{
 		box.center.y = 0;
-	} */
+	} 
 	x = pt[1].x - (box.size.width * 0.5);
 	y = pt[1].y - (box.size.height * 0.5);
 	width = box.size.width * 2;
@@ -232,7 +242,7 @@ int ArmorRecognition::get_num(RotatedRect box, Ptr<SVM> svm, Mat frame)
 	int x = pt[3].x + box.size.width / 5;
 	int y = pt[3].y - box.size.height / 2;
 	int wh = box.size.width * 3 / 5;
-	int ht = box.size.height * 2;
+	int ht = box.size.height * 1.5;
 
 	if (x <= 0)
 	{
@@ -255,9 +265,9 @@ int ArmorRecognition::get_num(RotatedRect box, Ptr<SVM> svm, Mat frame)
 
 	//cout << "x:" << x << "y:" << y << "width:" << wh << "hight:" << ht << endl;	
 	Mat imageROI;
-	outfile << "开始构建装甲板数字roi..." << endl;
+	//cout << "开始构建装甲板数字roi..." << endl;
 	imageROI = frame(Rect(x, y, wh, ht));
-	outfile << "构建装甲板数字roi成功..." << endl;
+	//cout << "构建装甲板数字roi成功..." << endl;
 	//cout << 22 << endl;
 
 
@@ -329,16 +339,16 @@ vector<my_rect> ArmorRecognition::armorDetect(vector<RotatedRect> vEllipse, Mat 
 				{
 #ifdef SvmPredict
 					int finalnum;
-					outfile << "开始预测装甲板数字..." << endl;
+					//cout << "开始预测装甲板数字..." << endl;
 					finalnum = get_num(armor.rect, svm, frame);
-					outfile << "预测装甲板数字结束..." << endl;
+					//cout << "预测装甲板数字结束..." << endl;
 					if (finalnum)
 					{
 						armor.num = finalnum;
 						vRlt.push_back(armor);
 					}
 #else
-					outfile << "找到候选装甲板..." << endl;
+					//cout << "找到候选装甲板..." << endl;
 					vRlt.push_back(armor);
 #endif
 				}
@@ -394,10 +404,10 @@ void ArmorRecognition::track_armor(Mat frame, Ptr<SVM> svm, Rect RoiRect)
 	}
 
 
-	dilate(diff, diff, Mat(), Point(-1, -1), 4);
-
 	threshold(diff, th1, color_th, 255, THRESH_BINARY);
 	threshold(gray, th, gray_th, 255, THRESH_BINARY);
+	dilate(th, th, Mat(), Point(-1, -1), 2);
+	dilate(th1, th1, Mat(), Point(-1, -1), 2);
 	
 #ifdef gray_th_img
 	imshow("gray_th", th);
@@ -515,12 +525,12 @@ void ArmorRecognition::track_armor(Mat frame, Ptr<SVM> svm, Rect RoiRect)
 		Isfind = 0;
 	}
 
-#ifdef frameimg
+ #ifdef frameimg
 	pthread_mutex_lock(&image_mutex);
-	imshow("frame", frame);
+	imshow("framee", frame);
 	waitKey(1);
 	pthread_mutex_unlock(&image_mutex);
-#endif 			
+#endif 	
 
 	vEllipse.clear();
 	vRlt.clear();

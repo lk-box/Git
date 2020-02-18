@@ -1,29 +1,33 @@
-#include "ArmorRecognition.h" //装甲识别
-#include "SendData.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/ml/ml.hpp>
 #include <pthread.h>
 #include <iostream>
 #include <stdlib.h>
-
+#include "ArmorRecognition.h" //装甲识别
+#include "SendData.h"
+#include "get_omega.h"
 //#include "KSJCamera.h"
 //#include "serialport.h"	
+
 using namespace std;
 using namespace cv;
 using namespace cv::ml;
 
 
-//#define GY
-//#define AimTrackbar
 
-//全局变量
-String videoPath0 = "video/q.avi";
+
+//全局变量q
+String videoPath0 = "video/8.avi";
 FileStorage fsRead;
 Ptr<SVM> SvmLoad;
 Rect RoiRect= Rect(0, 0, MATWIDTH, MATHEIGHT); //感兴趣区域初始化
 uchar ReceiveBuffer[1] = { '0' };
 vector<float> savedis;
 int unfind = 0;
+char c = 0;
+
+
+
 
 //相机
 #ifdef GY
@@ -33,12 +37,14 @@ int unfind = 0;
 #endif
 
 //线程锁
-pthread_mutex_t get_mutex;
-pthread_mutex_t receive_mutex;
-pthread_mutex_t data_mutex;
-pthread_mutex_t dis_mutex;
+pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;/*定义互斥锁*/
+pthread_mutex_t mutex2 = PTHREAD_MUTEX_INITIALIZER;/*定义互斥锁*/
+pthread_mutex_t mutex3 = PTHREAD_MUTEX_INITIALIZER;/*定义互斥锁*/
+pthread_mutex_t mutex4 = PTHREAD_MUTEX_INITIALIZER;/*定义互斥锁*/
 pthread_mutex_t roi_mutex;
-pthread_mutex_t aim_mutex;
+pthread_mutex_t data_mutex;
+pthread_mutex_t ReceiveMutex;
+
 
 
 //处理图像
@@ -47,36 +53,40 @@ void* run2(void* arg);
 
 //接收数据
 void* receive(void* arg);
-
-//读取自瞄参数
-void Aim_param(ArmorRecognition &Target);
-
-//距离补偿
 float dis_compensation1(float dis);
 
-
-
-
+void* receive(void* arg)
+{
+	while (1)
+	{
+		pthread_mutex_lock(&ReceiveMutex);
+		SerialPort_Recv(ReceiveBuffer, 1);
+		pthread_mutex_unlock(&ReceiveMutex);
+	}
+}
 
 void* run1(void* arg)
 {
-    ArmorRecognition Target;//自瞄对象创建
-	SendData uart;//串口发送对象创建
+    ArmorRecognition Target(fsRead);
+	SendData uart;
 
-	pthread_mutex_lock(&aim_mutex);
-    Aim_param(Target);
-	pthread_mutex_unlock(&aim_mutex);
-
-    Mat srcimage;//原始图像
-	Mat Roi_image;//roi图像
+    Mat srcimage;
+	Mat Roi_image;
 
 #ifdef AimTrackbar
 	namedWindow("Debug", CV_WINDOW_NORMAL);
+	createTrackbar("gray_th", "Debug", &Target.gray_th, 255, 0);
+	createTrackbar("color_th", "Debug", &Target.color_th, 255, 0);
+	createTrackbar("ch", "Debug", &Target.ch, 1, 0);
 #endif
 
-    while(1)
-    {
-        if (ReceiveBuffer[0] == 'r')
+
+	while(1)
+	{
+
+		clock_t start, end;
+		start = clock();
+		if (ReceiveBuffer[0] == 'r')
 		{
 			Target.ch = 1;
 			fsRead["rgray_th"] >> Target.gray_th;
@@ -87,91 +97,63 @@ void* run1(void* arg)
 			fsRead["bgray_th"] >> Target.gray_th;
 		}
 
-#ifdef AimTrackbar
-		createTrackbar("gray_th", "Debugg", &Target.gray_th, 255, 0);
-		createTrackbar("color_th", "Debug", &Target.color_th, 255, 0);
-#endif
+		pthread_mutex_lock(&mutex1);
+		cap >> srcimage;
+		pthread_mutex_unlock(&mutex1); 
 
 
-        pthread_mutex_lock(&get_mutex);
-#ifdef GY
-		cap.getSrc(srcimage);
-#else
-		cap.read(srcimage);
-#endif
-		pthread_mutex_unlock(&get_mutex);
+		if (!srcimage.data)
+		{
+			cout << "Camera reading error!";
+			break;
+		}
+		
+		Roi_image = srcimage(RoiRect).clone();
 
-        if (!srcimage.data)
-        {
-            cout << "Camera reading error!";
-            break;
-        }
-        //得到图像需要处理的部分
-        Roi_image = srcimage(RoiRect).clone();
+		Target.track_armor(Roi_image, SvmLoad, RoiRect);
+		//cout << "x :" << Target.x << ", y :" << Target.y << ", width :" << Target.width << ", height :" << Target.height << endl;
+		
+		if (Target.Isfind)
+		{
+			Target.distance = dis_compensation1(Target.distance);
 
-		// clock_t start, end;
-		// start = clock();
-
-		//图像处理
-        Target.track_armor(Roi_image, SvmLoad, RoiRect);
-		cout << "x :" << Target.x << ", y :" << Target.y << ", width :" << Target.width << ", height :" << Target.height << endl;
-		// end = clock();
-		// double fps = 1 / ((double)(end - start) / CLOCKS_PER_SEC);
-		// cout << "fps = " << fps << endl;
-
-
-	    if (Target.Isfind)
-        {
-            Target.distance = dis_compensation1(Target.distance);
-
-			//更新roi
 			pthread_mutex_lock(&roi_mutex);
-            RoiRect = Rect(Target.x, Target.y, Target.width, Target.height);
+			RoiRect = Rect(Target.x, Target.y, Target.width, Target.height);
 			pthread_mutex_unlock(&roi_mutex);
 
-            unfind = 0;
-			//cout << "yaw :" << Target.yaw << ", pitch :" << Target.pitch << ", distance :" << Target.distance << endl;
+			unfind = 0;
+			pthread_mutex_lock(&data_mutex);
+			cout << "yaw :" << Target.yaw << ", pitch :" << Target.pitch << ", distance :" << Target.distance << endl;
+			//uart.Send(Target.yaw, -1 * Target.pitch, Target.distance / 100.0, 0);
+			pthread_mutex_unlock(&data_mutex);
 
-			//数据发送
-            pthread_mutex_lock(&data_mutex);
-            uart.Send(Target.yaw, -1 * Target.pitch, Target.distance / 100.0, 0);
-            pthread_mutex_unlock(&data_mutex);
-
-        }
-        else
-        {
-            unfind++;
-            if (unfind >= 10)
-            {
-				//更新roi
+		}
+		else
+		{
+			unfind++;
+			if (unfind >= 10)
+			{
 				pthread_mutex_lock(&roi_mutex);
-               	RoiRect = Rect(0, 0, MATWIDTH, MATHEIGHT);
+				RoiRect = Rect(0, 0, MATWIDTH, MATHEIGHT);
 				pthread_mutex_unlock(&roi_mutex);
-            } 
-			//cout << "yaw :" << 0 << ", pitch :" << 0 << ", distance :" << 0 << endl;
+			} 
+			pthread_mutex_lock(&data_mutex);
+			cout << "yaw :" << 0 << ", pitch :" << 0 << ", distance :" << 0 << endl;
+			//uart.Send(0, 0, 0, 9);
+			pthread_mutex_unlock(&data_mutex);
+		} 
+		end = clock();
+		double fps = 1 / ((double)(end - start) / CLOCKS_PER_SEC);
+		//cout << "fps = " << fps << endl;
 
-			//数据发送
-            pthread_mutex_lock(&data_mutex);
-            uart.Send(0, 0, 0, 9);
-            pthread_mutex_unlock(&data_mutex);
-        } 
-        
-    }
-
+	}
+	
 }
-
-
-
-
 
 void* run2(void* arg)
 {
-    ArmorRecognition Target;
+    ArmorRecognition Target(fsRead);
 	SendData uart;
-
-	pthread_mutex_lock(&aim_mutex);
-    Aim_param(Target);
-	pthread_mutex_unlock(&aim_mutex);
 
     Mat srcimage;
 	Mat Roi_image;
@@ -188,13 +170,9 @@ void* run2(void* arg)
 			fsRead["bgray_th"] >> Target.gray_th;
 		}
 
-        pthread_mutex_lock(&get_mutex);
-#ifdef GY
-		cap.getSrc(srcimage);
-#else
-		cap.read(srcimage);
-#endif
-		pthread_mutex_unlock(&get_mutex);
+        pthread_mutex_lock(&mutex1);
+		cap >> srcimage;
+		pthread_mutex_unlock(&mutex1);
 
         if (!srcimage.data)
         {
@@ -205,7 +183,7 @@ void* run2(void* arg)
         Roi_image = srcimage(RoiRect).clone();
 
         Target.track_armor(Roi_image, SvmLoad, RoiRect);
-		cout << "x :" << Target.x << ", y :" << Target.y << ", width :" << Target.width << ", height :" << Target.height << endl;
+		//cout << "x :" << Target.x << ", y :" << Target.y << ", width :" << Target.width << ", height :" << Target.height << endl;
 	    
 		if (Target.Isfind)
         {
@@ -216,9 +194,9 @@ void* run2(void* arg)
 			pthread_mutex_unlock(&roi_mutex);
 
             unfind = 0;
-			//cout << "yaw :" << Target.yaw << ", pitch :" << Target.pitch << ", distance :" << Target.distance << endl;
             pthread_mutex_lock(&data_mutex);
-            uart.Send(Target.yaw, -1 * Target.pitch, Target.distance / 100.0, 0);
+			cout << "yaw :" << Target.yaw << ", pitch :" << Target.pitch << ", distance :" << Target.distance << endl;
+            //uart.Send(Target.yaw, -1 * Target.pitch, Target.distance / 100.0, 0);
             pthread_mutex_unlock(&data_mutex);
 
         }
@@ -231,50 +209,22 @@ void* run2(void* arg)
                	RoiRect = Rect(0, 0, MATWIDTH, MATHEIGHT);
 				pthread_mutex_unlock(&roi_mutex);
             } 
-			//cout << "yaw :" << 0 << ", pitch :" << 0 << ", distance :" << 0 << endl;
             pthread_mutex_lock(&data_mutex);
-            uart.Send(0, 0, 0, 9);
+			cout << "yaw :" << 0 << ", pitch :" << 0 << ", distance :" << 0 << endl;
+            //uart.Send(0, 0, 0, 9);
             pthread_mutex_unlock(&data_mutex);
         } 
         
     }
 
-}
+}  
 
 
 
 
-void* receive(void* arg)
-{
-	while (1)
-	{
-		pthread_mutex_lock(&receive_mutex);
-		//SerialPort_Recv(ReceiveBuffer, 1);
-		pthread_mutex_unlock(&receive_mutex);
-	}
-}
 
 
-void Aim_param(ArmorRecognition &Target)
-{    
-    Target.ch = 0;
-	fsRead["bgray_th"] >> Target.gray_th;
 
-	fsRead["color_th"] >> Target.color_th;
-	fsRead["diff_angle"] >> Target.diff_angle;
-	fsRead["min_area"] >> Target.min_area;
-	fsRead["max_area"] >> Target.max_area;
-
-    fsRead["min_length"] >> Target.min_length;
-	fsRead["max_length"] >> Target.max_length;
-    fsRead["min_armor_angle"] >> Target.min_armor_angle;
-	fsRead["max_armor_angle"] >> Target.max_armor_angle;
-    fsRead["min_led_Ratio"] >> Target.min_led_Ratio;
-	fsRead["max_led_Ratio"] >> Target.max_led_Ratio;
-    fsRead["min_armor_Ratio"] >> Target.min_armor_Ratio;
-	fsRead["max_armor_Ratio"] >> Target.max_armor_Ratio;
-    
-}
 
 float dis_compensation1(float dis)
 {
@@ -297,4 +247,6 @@ float dis_compensation1(float dis)
 		return (aveadd * 0.7 + savedis[8] * 0.3);
 	}
 }
+
+
 
